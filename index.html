@@ -84,7 +84,6 @@
         .contract-fill { height: 100%; background: #fbbf24; transition: width 0.3s; }
         .contract-timer-warning { font-size: 10px; font-weight: 900; color: #ef4444; margin-top: 4px; display: block; }
         
-        /* LOGO STYLE - ORIGINAL COLOR */
         .floor-logo {
             position: absolute;
             top: 50%;
@@ -135,7 +134,7 @@
             <div class="queue-header">
                 <h2 class="text-[11px] font-black opacity-30 uppercase tracking-[0.2em]">Inbound Queue</h2>
                 <div class="flex items-center">
-                    <span id="intake-warning" class="intake-cost-warning hidden">Paused: -$5/s</span>
+                    <span id="intake-warning" class="intake-cost-warning hidden">Paused</span>
                     <button id="queue-toggle-btn" onclick="toggleIntake()" class="queue-toggle on">INTAKE: ON</button>
                 </div>
             </div>
@@ -272,7 +271,7 @@
             btn.innerText = intakeActive ? "INTAKE: ON" : "INTAKE: OFF";
             btn.classList.toggle('on', intakeActive);
             document.getElementById('intake-warning').classList.toggle('hidden', intakeActive);
-            showToast(intakeActive ? "SYSTEM ACCEPTING GUESTS" : "INTAKE HALTED (-$5/s)");
+            showToast(intakeActive ? "SYSTEM ACCEPTING GUESTS" : "INTAKE HALTED");
         };
 
         window.toggleTheme = () => {
@@ -308,7 +307,12 @@
             };
             activeContracts.push(newContract);
             render();
-            setTimeout(spawnContract, 35000);
+            
+            // MODIFIED: In Round 4, contracts are minimised to once every 5 minutes (300s)
+            let contractDelay = 50000 + (currentRound * 30000);
+            if (currentRound === 4) contractDelay = 60000; 
+
+            setTimeout(spawnContract, contractDelay); 
         };
 
         window.acceptContract = (id) => {
@@ -485,7 +489,7 @@
                 });
                 render();
             }
-            const nextSpawn = currentRound === 4 ? 5000 : Math.max(5000, 12000 - (currentRound * 1500));
+            const nextSpawn = currentRound === 4 ? 8000 : Math.max(8000, 15000 - (currentRound * 1500));
             setTimeout(spawnLogic, nextSpawn);
         }
 
@@ -494,7 +498,13 @@
             time--;
             if(isCleaning) score -= 5;
             if(isSurge) score -= 15;
-            if(!intakeActive) { score -= 5; stats.fines += 5; }
+            
+            if(!intakeActive) { 
+                const penaltyAmount = currentRound <= 1 ? 5 : (5 * currentRound); 
+                score -= penaltyAmount; 
+                stats.fines += penaltyAmount; 
+                document.getElementById('intake-warning').innerText = `Paused: -$${penaltyAmount}/s`;
+            }
 
             for (let i = activeContracts.length - 1; i >= 0; i--) {
                 let c = activeContracts[i];
