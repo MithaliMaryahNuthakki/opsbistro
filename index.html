@@ -680,7 +680,7 @@
             if(currentRound === 0) summary += `<div class="mt-4 p-3 bg-indigo-500/20 text-indigo-400 text-xs rounded-lg uppercase font-black">Trial Complete. Data will reset for Round 1.</div>`;
             document.getElementById('audit-details').innerHTML = summary;
             if (db) {
-                try { await addDoc(collection(db, "leaderboard2"), { op: opName, score, round: currentRound }); } catch(e) {}
+                try { await addDoc(collection(db, "leaderboard3"), { op: opName, score, round: currentRound }); } catch(e) {}
             }
             saveGame();
         }
@@ -703,4 +703,5 @@
     </script>
 </body>
 </html>
+
 
