@@ -316,6 +316,7 @@
         let unlockedRound = 1;             // ADDED: highest round players may advance into. 1 = trial & Round 1 are always open; admin gates R2+
         let slot = "1";                    // ADDED: competition slot/room; data is fully isolated per slot
         let lastResetToken = null;         // ADDED: detects an admin "reset slot" broadcast
+        let feedSlot = null;               // ADDED: which slot the player's control feed is currently on
         // Slot-scoped Firestore paths — everything lives under slots/{slot}/...
         const slotDoc = () => doc(db, "slots", slot);                       // control fields: unlockedRound, resetToken
         const playersCol = () => collection(db, "slots", slot, "players");  // one score doc per player
@@ -445,6 +446,7 @@
                         lastResetToken = token; // baseline on first read — don't trigger
                     } else if (token !== lastResetToken) {
                         lastResetToken = token;
+                        active = false;          // stop the loop NOW so no live-write recreates our row
                         showToast("ADMIN RESET — RESTARTING FROM ROUND 0");
                         localStorage.removeItem('bistro_flow_save');
                         setTimeout(() => location.reload(), 900);
@@ -473,6 +475,16 @@
             const next = Math.min(4, unlockedRound + 1);
             try { await setDoc(slotDoc(), { unlockedRound: next }, { merge: true }); } catch (e) {}
         };
+
+        // Ensure the player is subscribed to the control feed for their CURRENT slot (re-subscribes on slot change).
+        function ensurePlayerFeed() {
+            if (!db || currentUserIsAdmin) return;
+            if (controlUnsub && feedSlot === slot) return; // already listening to the right slot
+            if (controlUnsub) { controlUnsub(); controlUnsub = null; }
+            lastResetToken = null; // new slot -> re-baseline the reset token
+            feedSlot = slot;
+            startControlFeed(false);
+        }
 
         // Reset the whole slot: wipe its leaderboard and send every player back to Round 0.
         window.adminResetSlot = async () => {
@@ -549,16 +561,17 @@
                     if (nameInput && !nameInput.value) {
                         nameInput.value = (user.displayName || user.email || "AGENT").toUpperCase();
                     }
-                    const savedSlot = localStorage.getItem('bistro_slot');
+                    const savedSlot = localStorage.getItem('bistro_slot') || "1";
+                    slot = savedSlot;
                     const slotInput = document.getElementById('op-slot');
-                    if (slotInput && !slotInput.value) slotInput.value = savedSlot || "1";
+                    if (slotInput && !slotInput.value) slotInput.value = savedSlot;
                     const chip = document.getElementById('user-chip');
                     if (chip) {
                         chip.classList.remove('hidden');
                         chip.classList.add('flex');
                         document.getElementById('user-chip-name').innerText = user.displayName || user.email || "Operator";
                     }
-                    // NOTE: the player's control feed starts at launch (initGame/checkAutoLoad), once the slot is known.
+                    ensurePlayerFeed();      // ADDED: always listen for unlock/reset, even at the start screen
                     authReady();             // start / resume the game
                 } else {
                     document.getElementById('auth-gate').style.display = 'flex';
@@ -580,7 +593,7 @@
             localStorage.setItem('bistro_slot', slot);
             document.getElementById('start-screen').style.display = 'none';
             active = true;
-            if (db && !controlUnsub) startControlFeed(false); // now that the slot is known, listen for unlocks/reset
+            ensurePlayerFeed(); // re-subscribe if the player picked a different slot than sign-in default
             spawnLogic();
             spawnContract();
             renderVendors();
@@ -1071,7 +1084,7 @@
             if (loadGame() && opName) {
                 document.getElementById('start-screen').style.display = 'none';
                 active = true;
-                if (db && !currentUserIsAdmin && !controlUnsub) startControlFeed(false); // resume gate/reset listening on saved slot
+                if (!currentUserIsAdmin) ensurePlayerFeed(); // resume gate/reset listening on the saved slot
                 spawnLogic();
                 spawnContract();
                 renderVendors();
