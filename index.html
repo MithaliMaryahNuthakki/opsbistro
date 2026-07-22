@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BISTRO FLOW: DYNAMIC OPS</title>
+    <title>BISTRO FLOW: V12 DYNAMIC OPS</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;900&display=swap" rel="stylesheet">
     <style>
@@ -248,7 +248,7 @@
                 </div>
                 <div class="flex gap-2">
                     <button id="admin-advance-btn" onclick="adminUnlockNext()" class="px-5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-black uppercase text-xs shadow-lg">Unlock Next Round →</button>
-                    <button onclick="adminResetRounds()" class="px-4 py-3 rounded-xl font-black uppercase text-xs" style="background:var(--ops-btn); color:var(--ops-text); border:1px solid var(--border)">Reset to R0</button>
+                    <button onclick="adminResetRounds()" class="px-4 py-3 rounded-xl font-black uppercase text-xs" style="background:var(--ops-btn); color:var(--ops-text); border:1px solid var(--border)">Reset to R1</button>
                 </div>
             </div>
         </div>
@@ -257,7 +257,7 @@
         <div class="rounded-2xl p-5 flex-1 overflow-hidden flex flex-col" style="background: var(--card); border:1px solid var(--border)">
             <div class="flex justify-between items-center mb-3">
                 <h2 class="text-lg font-black italic uppercase text-emerald-500 leading-none">Live Leaderboard</h2>
-                <span class="text-[10px] font-black uppercase tracking-widest opacity-40">updates in real time</span>
+                <span id="admin-live-time" class="text-[10px] font-black uppercase tracking-widest opacity-40">● live</span>
             </div>
             <div class="overflow-y-auto">
                 <table class="w-full text-sm">
@@ -299,7 +299,7 @@
         let auth = null, provider = null, currentUser = null, adminUnsub = null; // ADDED
         let currentUserIsAdmin = false;    // ADDED: admin is a controller, not a player
         let controlUnsub = null;           // ADDED: listener on the shared round-control doc
-        let unlockedRound = 0;             // ADDED: highest round players are permitted to advance into
+        let unlockedRound = 1;             // ADDED: highest round players may advance into. 1 = trial & Round 1 are always open; admin gates R2+
         try {
             const app = initializeApp(firebaseConfig);
             db = getFirestore(app);
@@ -385,6 +385,8 @@
                 snap.forEach(d => rows.push(d.data()));
                 rows.sort((a, b) => (b.score || 0) - (a.score || 0));
                 renderAdminTable(rows);
+                const t = document.getElementById('admin-live-time');
+                if (t) t.innerText = `● live · ${new Date().toLocaleTimeString()}`;
             }, (err) => console.warn("Admin feed error:", err));
         }
 
@@ -408,13 +410,14 @@
         function startControlFeed(isAdmin) {
             if (!db) return;
             const ref = doc(db, "control", "game");
-            if (isAdmin) {
-                // Make sure the control doc exists without clobbering an existing value.
-                setDoc(ref, { unlockedRound: unlockedRound }, { merge: true }).catch(() => {});
-            }
             controlUnsub = onSnapshot(ref, (snap) => {
+                if (isAdmin && !snap.exists()) {
+                    // First run: create the control doc without clobbering anything later.
+                    setDoc(ref, { unlockedRound: 1 }, { merge: true }).catch(() => {});
+                    return;
+                }
                 const data = snap.data();
-                unlockedRound = (data && typeof data.unlockedRound === 'number') ? data.unlockedRound : 0;
+                unlockedRound = (data && typeof data.unlockedRound === 'number') ? data.unlockedRound : 1;
                 if (isAdmin) {
                     const el = document.getElementById('admin-unlocked-round');
                     if (el) el.innerText = `Round ${unlockedRound}`;
@@ -439,7 +442,7 @@
 
         window.adminResetRounds = async () => {
             if (!db) return;
-            try { await setDoc(doc(db, "control", "game"), { unlockedRound: 0 }, { merge: true }); } catch (e) {}
+            try { await setDoc(doc(db, "control", "game"), { unlockedRound: 1 }, { merge: true }); } catch (e) {}
         };
 
         // Enable/disable the player's "next round" button based on admin permission.
@@ -447,8 +450,8 @@
             const btn = document.getElementById('accept-results-btn');
             if (!btn) return;
             const target = currentRound + 1;
-            // Offline (no Firebase) or final accept -> self-serve, no gating.
-            if (!db || target > 4) { btn.disabled = false; btn.style.opacity = "1"; btn.innerText = "Accept Results"; return; }
+            // Offline, trial/Round 1, or final accept -> self-serve, no gating.
+            if (!db || target < 2 || target > 4) { btn.disabled = false; btn.style.opacity = "1"; btn.innerText = "Accept Results"; return; }
             if (unlockedRound >= target) {
                 btn.disabled = false; btn.style.opacity = "1";
                 btn.innerText = `Proceed to Round ${target}`;
@@ -638,10 +641,11 @@
         };
 
         window.startNextRound = () => { 
-            // Gate: online players may only advance once the admin has unlocked the target round.
+            // Gate: online players may only advance into Round 2+ once the admin has unlocked it.
+            // The trial (R0->R1) and entering Round 1 are always free.
             if (db && !currentUserIsAdmin) {
                 const target = currentRound + 1;
-                if (target <= 4 && unlockedRound < target) {
+                if (target >= 2 && target <= 4 && unlockedRound < target) {
                     showToast("WAITING FOR ADMIN TO UNLOCK NEXT ROUND");
                     return;
                 }
@@ -819,11 +823,29 @@
                 }
             });
             if(time % 10 === 0) renderVendors();
+            if(time % LIVE_WRITE_SECONDS === 0) pushLiveScore(); // ADDED: stream score to the leaderboard during play
             if(time <= 0) endRound();
             saveGame(); 
             render();
         }
         setInterval(tick, 1000);
+
+        // ADDED: push the current (bailout-adjusted) score to Firestore during a round so the
+        // admin leaderboard updates in real time, not just at round-end. Throttled to limit writes.
+        const LIVE_WRITE_SECONDS = 3;
+        async function pushLiveScore() {
+            if (!db || !currentUser || currentUserIsAdmin || !active) return;
+            try {
+                await setDoc(doc(db, "leaderboard3", currentUser.uid), {
+                    uid: currentUser.uid,
+                    op: opName,
+                    email: currentUser.email || null,
+                    score: Math.floor(score - totalBailout),
+                    round: currentRound,
+                    updatedAt: serverTimestamp()
+                }, { merge: true });
+            } catch (e) {}
+        }
 
         function renderVendors() {
             const container = document.getElementById('vendor-list');
