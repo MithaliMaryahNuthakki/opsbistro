@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>BISTRO FLOW: V12 DYNAMIC OPS</title>
+    <title>BISTRO FLOW: DYNAMIC OPS</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;900&display=swap" rel="stylesheet">
     <style>
@@ -73,7 +73,7 @@
         .table-progress-container { width: 100%; height: 6px; background: rgba(0,0,0,0.1); border-radius: 99px; margin-top: 4px; overflow: hidden; }
         .table-progress-bar { height: 100%; background: #10b981; transition: width 1s linear; }
         .cleaning-bar { background: #f59e0b !important; }
-        #theme-toggle { cursor: pointer; padding: 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--card); transition: 0.2s; color: var(--text-main); }
+        #theme-toggle, #admin-theme-toggle { cursor: pointer; padding: 8px; border-radius: 12px; border: 1px solid var(--border); background: var(--card); transition: 0.2s; color: var(--text-main); }
         .build-area { background: var(--bg); border-top: 1px solid var(--border); transition: 0.3s; }
         select { background: var(--card) !important; color: var(--text-main) !important; border: 1px solid var(--border) !important; }
 
@@ -99,6 +99,14 @@
 <body class="dark-mode">
 
     <div id="notification-toast">ACTION BLOCKED</div>
+
+    <!-- ===== ADDED: signed-in user chip (revealed after Google sign-in) ===== -->
+    <div id="user-chip" class="fixed bottom-4 left-4 z-[9500] hidden items-center gap-2 bg-slate-900/90 border border-white/10 rounded-full px-3 py-1.5 backdrop-blur">
+        <span id="user-chip-name" class="text-[10px] font-black uppercase text-white/80"></span>
+        <button onclick="signOutUser()" class="text-[9px] font-black uppercase text-red-400 hover:text-red-300 border-l border-white/10 pl-2">Sign Out</button>
+    </div>
+
+    <!-- ===== ADDED: admin-only live leaderboard button ===== -->
 
     <header class="p-4 flex justify-between items-center shadow-md">
         <div class="flex items-center gap-6">
@@ -188,6 +196,19 @@
         </aside>
     </main>
 
+    <!-- ===== ADDED: Google sign-in gate (sits above the start screen) ===== -->
+    <div id="auth-gate" class="fixed inset-0 bg-slate-950 z-[11000] flex items-center justify-center">
+        <div class="text-center p-12 bg-slate-900 rounded-[3rem] border border-white/10 shadow-2xl max-w-sm w-full">
+            <h1 class="text-3xl font-black italic uppercase tracking-tighter leading-none mb-2 text-white">Bistro <span class="text-amber-500">Flow</span></h1>
+            <p class="text-[11px] font-black text-indigo-400 uppercase tracking-widest mb-8">Sign in to launch operations</p>
+            <button id="google-signin-btn" onclick="googleSignIn()" class="w-full py-4 bg-white text-slate-900 rounded-2xl font-black uppercase tracking-widest shadow-xl flex items-center justify-center gap-3 hover:bg-slate-100 transition">
+                <svg width="20" height="20" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+                Sign in with Google
+            </button>
+            <p id="auth-error" class="text-red-500 text-[11px] font-bold mt-4 hidden"></p>
+        </div>
+    </div>
+
     <div id="start-screen" class="fixed inset-0 bg-slate-950 z-[9000] flex items-center justify-center">
         <div class="text-center p-12 bg-slate-900 rounded-[3rem] border border-white/10 shadow-2xl max-w-sm w-full">
             <input type="text" id="op-name" placeholder="OPERATOR ID" class="w-full p-4 mb-4 border border-slate-700 rounded-2xl text-center font-bold bg-slate-800 text-white outline-none">
@@ -203,23 +224,87 @@
         </div>
     </div>
 
+    <!-- ===== ADDED: full admin control console (controller view — no game) ===== -->
+    <div id="admin-console" class="fixed inset-0 z-[12000] hidden flex-col p-6" style="background: var(--bg); color: var(--text-main);">
+        <div class="flex justify-between items-center mb-6">
+            <div>
+                <h1 class="text-2xl font-black italic uppercase tracking-tighter leading-none">Bistro <span class="text-amber-500">Flow</span> — <span class="text-emerald-500">Admin Control</span></h1>
+                <div class="text-[10px] font-black uppercase tracking-widest opacity-50 mt-1">Live standings · round control</div>
+            </div>
+            <div class="flex items-center gap-3">
+                <button id="admin-theme-toggle" onclick="toggleTheme()" class="text-xl">🌙</button>
+                <span id="admin-console-user" class="text-xs font-bold opacity-70"></span>
+                <button onclick="signOutUser()" class="text-[10px] font-black uppercase text-red-500 rounded-full px-3 py-1.5" style="border:1px solid var(--border)">Sign Out</button>
+            </div>
+        </div>
+
+        <!-- Round control -->
+        <div class="rounded-2xl p-5 mb-6" style="background: var(--card); border:1px solid var(--border)">
+            <div class="flex items-center justify-between flex-wrap gap-4">
+                <div>
+                    <div class="text-[10px] font-black uppercase tracking-widest opacity-50">Rounds unlocked up to</div>
+                    <div id="admin-unlocked-round" class="text-3xl font-black">Round 0</div>
+                    <div class="text-[11px] opacity-60 mt-1">Players wait on the results screen until you unlock the next round.</div>
+                </div>
+                <div class="flex gap-2">
+                    <button id="admin-advance-btn" onclick="adminUnlockNext()" class="px-5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-black uppercase text-xs shadow-lg">Unlock Next Round →</button>
+                    <button onclick="adminResetRounds()" class="px-4 py-3 rounded-xl font-black uppercase text-xs" style="background:var(--ops-btn); color:var(--ops-text); border:1px solid var(--border)">Reset to R0</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Live leaderboard -->
+        <div class="rounded-2xl p-5 flex-1 overflow-hidden flex flex-col" style="background: var(--card); border:1px solid var(--border)">
+            <div class="flex justify-between items-center mb-3">
+                <h2 class="text-lg font-black italic uppercase text-emerald-500 leading-none">Live Leaderboard</h2>
+                <span class="text-[10px] font-black uppercase tracking-widest opacity-40">updates in real time</span>
+            </div>
+            <div class="overflow-y-auto">
+                <table class="w-full text-sm">
+                    <thead class="text-[10px] uppercase tracking-widest opacity-40" style="border-bottom:1px solid var(--border)">
+                        <tr>
+                            <th class="p-3 text-left">Rank</th>
+                            <th class="p-3 text-left">Operator</th>
+                            <th class="p-3 text-right">Score</th>
+                            <th class="p-3 text-center">Round</th>
+                        </tr>
+                    </thead>
+                    <tbody id="admin-rows"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
-        import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        // ADDED: setDoc/doc/onSnapshot/query/orderBy/serverTimestamp for the live, one-record-per-player leaderboard
+        import { getFirestore, collection, addDoc, setDoc, doc, onSnapshot, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        // ADDED: Firebase Auth (Google)
+        import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
         const firebaseConfig = {
-            apiKey: "AIzaSyDeQSmaXHZ7fR_YQ4kIzn7hiV3g4kxmTf45I",
-            authDomain: "bistroflow-c27e6.firebaseapp.com",
-            projectId: "bistroflow-c27e6",
-            storageBucket: "bistroflow-c27e6.firebasestorage.app",
-            messagingSenderId: "130551151404",
-            appId: "1:130551151404:web:7ff8d3073d6eaf05160a89"
+            apiKey: "AIzaSyDCqjQChzaULaeOUsP6HYVLQ1efsLbQD-s",
+            authDomain: "simulation1-fe00e.firebaseapp.com",
+            projectId: "simulation1-fe00e",
+            storageBucket: "simulation1-fe00e.firebasestorage.app",
+            messagingSenderId: "765545209491",
+            appId: "1:765545209491:web:2dabe79b386fd46404b766"
         };
-        
+
+        // ===== ADDED: set this to YOUR Google account email to unlock the admin leaderboard =====
+        const ADMIN_EMAIL = "sigmaeta@iimtrichy.ac.in";
+
         let db;
+        let auth = null, provider = null, currentUser = null, adminUnsub = null; // ADDED
+        let currentUserIsAdmin = false;    // ADDED: admin is a controller, not a player
+        let controlUnsub = null;           // ADDED: listener on the shared round-control doc
+        let unlockedRound = 0;             // ADDED: highest round players are permitted to advance into
         try {
             const app = initializeApp(firebaseConfig);
             db = getFirestore(app);
+            auth = getAuth(app);                 // ADDED
+            provider = new GoogleAuthProvider(); // ADDED
         } catch (e) { console.warn("Firebase failed to load."); }
 
         let score = 2000, time = 120, stock = 40, maxStock = 100, currentRound = 0, opName = "";
@@ -227,6 +312,14 @@
         let isCleaning = false, isSurge = false;
         let stats = { revenue: 0, penalty: 0, fines: 0 };
         let activeContracts = [];
+        let totalBailout = 0;              // cumulative rescue money injected; removed from the final leaderboard score
+        // Baseline capital a bankrupt player restarts the NEXT round with. Scales by round so the rescue
+        // is enough to actually operate (buy a full stock load + absorb penalties). Every dollar is
+        // negated from the final score, so a generous floor costs nothing in fairness.
+        //   bankrupt after Round 1 -> enter R2 with $6,000
+        //   bankrupt after Round 2 -> enter R3 with $9,000
+        //   bankrupt after Round 3 -> enter R4 with $12,000
+        const bailoutFloor = (round) => (round + 1) * 3000;
 
         const ROUND_CONFIG = {
             0: { time: 120, label: "Round 0: Trial" },
@@ -253,6 +346,165 @@
             { id: 99, type: 'PATIO', cap: 12, parties: [], busing: 0, busTotal: 0 }
         ];
 
+        // ============================================================
+        // ADDED: AUTH + ADMIN LAYER (game logic below is unchanged)
+        // ============================================================
+        function showAuthError(m) {
+            const el = document.getElementById('auth-error');
+            el.innerText = m;
+            el.classList.remove('hidden');
+        }
+
+        window.googleSignIn = async () => {
+            if (!auth) { showAuthError("Auth unavailable — check connection / Firebase config."); return; }
+            try {
+                await signInWithPopup(auth, provider);
+            } catch (e) {
+                showAuthError(e.code === 'auth/popup-closed-by-user' ? "Sign-in cancelled." : (e.message || "Sign-in failed."));
+            }
+        };
+
+        window.signOutUser = async () => {
+            try { if (auth) await signOut(auth); } catch (e) {}
+            location.reload();
+        };
+
+        let authReadyDone = false;
+        function authReady() {
+            if (authReadyDone) return;
+            authReadyDone = true;
+            renderVendors();
+            checkAutoLoad();
+        }
+
+        function startAdminFeed() {
+            if (!db || adminUnsub) return;
+            // Listen to the whole collection and sort client-side (robust; no index needed, always live).
+            adminUnsub = onSnapshot(collection(db, "leaderboard3"), (snap) => {
+                const rows = [];
+                snap.forEach(d => rows.push(d.data()));
+                rows.sort((a, b) => (b.score || 0) - (a.score || 0));
+                renderAdminTable(rows);
+            }, (err) => console.warn("Admin feed error:", err));
+        }
+
+        function renderAdminTable(rows) {
+            const body = document.getElementById('admin-rows');
+            if (!body) return;
+            if (!rows.length) {
+                body.innerHTML = `<tr><td colspan="4" class="p-6 text-center opacity-40 uppercase text-xs font-black">No scores yet</td></tr>`;
+                return;
+            }
+            body.innerHTML = rows.map((r, i) => `
+                <tr style="border-bottom:1px solid var(--border)">
+                    <td class="p-3 font-black ${i===0?'text-amber-500':i===1?'text-slate-400':i===2?'text-orange-500':'opacity-60'}">#${i+1}</td>
+                    <td class="p-3 font-black uppercase">${r.op || '—'}</td>
+                    <td class="p-3 font-mono text-emerald-500 font-black text-right">$${Math.floor(r.score || 0).toLocaleString()}</td>
+                    <td class="p-3 text-center opacity-60 font-bold">${r.round ?? '—'}</td>
+                </tr>`).join('');
+        }
+
+        // Shared round control: admin unlocks rounds; players wait until permitted.
+        function startControlFeed(isAdmin) {
+            if (!db) return;
+            const ref = doc(db, "control", "game");
+            if (isAdmin) {
+                // Make sure the control doc exists without clobbering an existing value.
+                setDoc(ref, { unlockedRound: unlockedRound }, { merge: true }).catch(() => {});
+            }
+            controlUnsub = onSnapshot(ref, (snap) => {
+                const data = snap.data();
+                unlockedRound = (data && typeof data.unlockedRound === 'number') ? data.unlockedRound : 0;
+                if (isAdmin) {
+                    const el = document.getElementById('admin-unlocked-round');
+                    if (el) el.innerText = `Round ${unlockedRound}`;
+                    const adv = document.getElementById('admin-advance-btn');
+                    if (adv) {
+                        const next = unlockedRound + 1;
+                        adv.innerText = next > 4 ? "All Rounds Unlocked" : `Unlock Round ${next} →`;
+                        adv.disabled = next > 4;
+                        adv.style.opacity = next > 4 ? "0.5" : "1";
+                    }
+                } else {
+                    updateAdvanceGate();
+                }
+            }, (e) => console.warn("Control feed error:", e));
+        }
+
+        window.adminUnlockNext = async () => {
+            if (!db) return;
+            const next = Math.min(4, unlockedRound + 1);
+            try { await setDoc(doc(db, "control", "game"), { unlockedRound: next }, { merge: true }); } catch (e) {}
+        };
+
+        window.adminResetRounds = async () => {
+            if (!db) return;
+            try { await setDoc(doc(db, "control", "game"), { unlockedRound: 0 }, { merge: true }); } catch (e) {}
+        };
+
+        // Enable/disable the player's "next round" button based on admin permission.
+        function updateAdvanceGate() {
+            const btn = document.getElementById('accept-results-btn');
+            if (!btn) return;
+            const target = currentRound + 1;
+            // Offline (no Firebase) or final accept -> self-serve, no gating.
+            if (!db || target > 4) { btn.disabled = false; btn.style.opacity = "1"; btn.innerText = "Accept Results"; return; }
+            if (unlockedRound >= target) {
+                btn.disabled = false; btn.style.opacity = "1";
+                btn.innerText = `Proceed to Round ${target}`;
+            } else {
+                btn.disabled = true; btn.style.opacity = "0.5";
+                btn.innerText = "Waiting for admin…";
+            }
+        }
+
+        if (auth) {
+            onAuthStateChanged(auth, (user) => {
+                currentUser = user;
+                if (user) {
+                    document.getElementById('auth-gate').style.display = 'none';
+                    const isAdmin = !!(user.email && user.email.toLowerCase() === ADMIN_EMAIL.toLowerCase());
+                    currentUserIsAdmin = isAdmin;
+
+                    if (isAdmin) {
+                        // Admin is a controller — do NOT launch the game.
+                        document.getElementById('start-screen').style.display = 'none';
+                        const consoleEl = document.getElementById('admin-console');
+                        consoleEl.classList.remove('hidden');
+                        consoleEl.style.display = 'flex';
+                        const cu = document.getElementById('admin-console-user');
+                        if (cu) cu.innerText = user.displayName || user.email || "Admin";
+                        startAdminFeed();       // live leaderboard
+                        startControlFeed(true); // round unlock controls
+                        return;
+                    }
+
+                    // Player
+                    const nameInput = document.getElementById('op-name');
+                    if (nameInput && !nameInput.value) {
+                        nameInput.value = (user.displayName || user.email || "AGENT").toUpperCase();
+                    }
+                    const chip = document.getElementById('user-chip');
+                    if (chip) {
+                        chip.classList.remove('hidden');
+                        chip.classList.add('flex');
+                        document.getElementById('user-chip-name').innerText = user.displayName || user.email || "Operator";
+                    }
+                    startControlFeed(false); // listen for admin round unlocks
+                    authReady();             // start / resume the game
+                } else {
+                    document.getElementById('auth-gate').style.display = 'flex';
+                }
+            });
+        } else {
+            // Offline / Firebase unavailable: skip the gate so the game still runs locally (self-serve rounds).
+            document.getElementById('auth-gate').style.display = 'none';
+            authReady();
+        }
+        // ============================================================
+        // END ADDED LAYER
+        // ============================================================
+
         window.initGame = () => {
             opName = document.getElementById('op-name').value.toUpperCase() || "AGENT";
             document.getElementById('start-screen').style.display = 'none';
@@ -275,15 +527,13 @@
         };
 
         window.toggleTheme = () => {
-            const body = document.body;
-            const btn = document.getElementById('theme-toggle');
-            if (body.classList.contains('dark-mode')) {
-                body.classList.remove('dark-mode');
-                btn.innerText = "☀️";
-            } else {
-                body.classList.add('dark-mode');
-                btn.innerText = "🌙";
-            }
+            const goingDark = !document.body.classList.contains('dark-mode');
+            document.body.classList.toggle('dark-mode', goingDark);
+            const icon = goingDark ? "🌙" : "☀️";
+            ['theme-toggle', 'admin-theme-toggle'].forEach(id => {
+                const b = document.getElementById(id);
+                if (b) b.innerText = icon;
+            });
         };
 
         window.updateBuildPrice = () => {
@@ -388,19 +638,36 @@
         };
 
         window.startNextRound = () => { 
+            // Gate: online players may only advance once the admin has unlocked the target round.
+            if (db && !currentUserIsAdmin) {
+                const target = currentRound + 1;
+                if (target <= 4 && unlockedRound < target) {
+                    showToast("WAITING FOR ADMIN TO UNLOCK NEXT ROUND");
+                    return;
+                }
+            }
             guests = []; 
             TABLES.forEach(t => { 
                 t.parties = []; 
                 t.busing = 0; 
                 t.busTotal = 0;
             });
-            if (score < 0) {
-                score = 1500; 
-                showToast(`CORPORATE BAILOUT: DEBT CLEARED, +$1500`);
+            // MODIFIED: from Round 1 onward, EVERY player starts the next round with at least the
+            // baseline. Anyone below it (negative OR just low) is topped up to the floor. The amount
+            // injected is tracked in totalBailout and negated from the final score.
+            if (currentRound >= 1) {
+                const floor = bailoutFloor(currentRound); // scales with the round: R1->6k, R2->9k, R3->12k
+                if (score < floor) {
+                    const gift = floor - score;           // brings a negative OR low balance up to the baseline
+                    totalBailout += gift;
+                    score = floor;
+                    showToast(`CAPITAL TOP-UP: +$${Math.floor(gift).toLocaleString()} to $${floor.toLocaleString()} baseline (removed from final score)`);
+                }
             }
             if(currentRound === 0) {
                 score = 2000; stock = 40; maxStock = 100;
                 pendingOrders = [];
+                totalBailout = 0; // trial resets; the real game starts clean
             }
             currentRound++;
             if (currentRound > 4) {
@@ -453,7 +720,7 @@
         };
 
         function saveGame() {
-            const gameState = { score, time, stock, maxStock, currentRound, opName, TABLES, pendingOrders, guests, activeContracts, intakeActive };
+            const gameState = { score, time, stock, maxStock, currentRound, opName, TABLES, pendingOrders, guests, activeContracts, intakeActive, totalBailout };
             localStorage.setItem('bistro_flow_save', JSON.stringify(gameState));
         }
 
@@ -467,6 +734,7 @@
                 pendingOrders = data.pendingOrders || []; guests = data.guests || [];
                 activeContracts = data.activeContracts || [];
                 intakeActive = data.intakeActive !== undefined ? data.intakeActive : true;
+                totalBailout = data.totalBailout || 0;
                 document.getElementById('op-name').value = opName;
                 return true;
             }
@@ -670,17 +938,37 @@
             });
             score -= contractFines;
             stats.fines += contractFines;
+            // ADDED: competitive score removes any rescue money received across all rounds
+            const adjustedScore = Math.floor(score - totalBailout);
             document.getElementById('audit-screen').style.display = 'flex';
+            updateAdvanceGate();
             let summary = `
                 <div class="flex justify-between"><span>GROSS SALES</span><span class="text-emerald-400">+$${stats.revenue}</span></div>
                 <div class="flex justify-between text-red-400"><span>MISMATCH LOSS</span><span>-$${Math.floor(stats.penalty)}</span></div>
                 <div class="flex justify-between text-red-400"><span>PENALTIES & BREACHES</span><span>-$${stats.fines}</span></div>
-                <div class="border-t border-slate-700 pt-2 font-black text-lg"><span>TOTAL CAPITAL</span><span>$${Math.floor(score)}</span></div>
+                <div class="border-t border-slate-700 pt-2 flex justify-between font-black text-lg"><span>WORKING CAPITAL</span><span>$${Math.floor(score).toLocaleString()}</span></div>
             `;
+            if (totalBailout > 0) {
+                summary += `<div class="flex justify-between text-amber-400"><span>BAILOUTS RECEIVED</span><span>-$${Math.floor(totalBailout).toLocaleString()}</span></div>`;
+            }
+            summary += `<div class="flex justify-between font-black text-lg text-indigo-400"><span>LEADERBOARD SCORE</span><span>$${adjustedScore.toLocaleString()}</span></div>`;
             if(currentRound === 0) summary += `<div class="mt-4 p-3 bg-indigo-500/20 text-indigo-400 text-xs rounded-lg uppercase font-black">Trial Complete. Data will reset for Round 1.</div>`;
             document.getElementById('audit-details').innerHTML = summary;
-            if (db) {
-                try { await addDoc(collection(db, "leaderboard3"), { op: opName, score, round: currentRound }); } catch(e) {}
+            // MODIFIED: one live-updating leaderboard record per signed-in player (keyed by uid)
+            if (db && currentUser) {
+                try {
+                    await setDoc(doc(db, "leaderboard3", currentUser.uid), {
+                        uid: currentUser.uid,
+                        op: opName,
+                        email: currentUser.email || null,
+                        score: adjustedScore,
+                        round: currentRound,
+                        updatedAt: serverTimestamp()
+                    });
+                } catch(e) {}
+            } else if (db) {
+                // Offline / no-auth fallback keeps the original behaviour.
+                try { await addDoc(collection(db, "leaderboard3"), { op: opName, score: adjustedScore, round: currentRound }); } catch(e) {}
             }
             saveGame();
         }
@@ -696,12 +984,8 @@
                 render();
             }
         }
-        
-        renderVendors();
-        checkAutoLoad();
 
+        // NOTE: renderVendors() + checkAutoLoad() now run from authReady() once sign-in is confirmed.
     </script>
 </body>
 </html>
-
-
