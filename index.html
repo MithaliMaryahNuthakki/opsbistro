@@ -212,6 +212,8 @@
     <div id="start-screen" class="fixed inset-0 bg-slate-950 z-[9000] flex items-center justify-center">
         <div class="text-center p-12 bg-slate-900 rounded-[3rem] border border-white/10 shadow-2xl max-w-sm w-full">
             <input type="text" id="op-name" placeholder="OPERATOR ID" class="w-full p-4 mb-4 border border-slate-700 rounded-2xl text-center font-bold bg-slate-800 text-white outline-none">
+            <input type="text" id="op-slot" placeholder="SLOT CODE" value="1" class="w-full p-4 mb-4 border border-slate-700 rounded-2xl text-center font-bold bg-slate-800 text-white outline-none">
+            <div class="text-[9px] font-black uppercase tracking-widest text-slate-500 mb-4">Enter the slot code your admin gave you</div>
             <button onclick="initGame()" class="w-full py-5 bg-indigo-600 text-white rounded-2xl font-black uppercase tracking-widest shadow-xl">Launch System</button>
         </div>
     </div>
@@ -238,17 +240,29 @@
             </div>
         </div>
 
+        <!-- Slot selector -->
+        <div class="rounded-2xl p-4 mb-4 flex items-center justify-between flex-wrap gap-3" style="background: var(--card); border:1px solid var(--border)">
+            <div class="flex items-center gap-3">
+                <span class="text-[10px] font-black uppercase tracking-widest opacity-50">Controlling slot</span>
+                <span id="admin-slot-label" class="text-lg font-black text-amber-500">1</span>
+            </div>
+            <div class="flex items-center gap-2">
+                <input type="text" id="admin-slot" value="1" class="w-28 p-2 rounded-lg text-center font-black text-sm" style="background:var(--bg); color:var(--text-main); border:1px solid var(--border)">
+                <button onclick="adminLoadSlot()" class="px-4 py-2 rounded-lg font-black uppercase text-xs" style="background:var(--ops-btn); color:var(--ops-text); border:1px solid var(--border)">Load Slot</button>
+            </div>
+        </div>
+
         <!-- Round control -->
         <div class="rounded-2xl p-5 mb-6" style="background: var(--card); border:1px solid var(--border)">
             <div class="flex items-center justify-between flex-wrap gap-4">
                 <div>
                     <div class="text-[10px] font-black uppercase tracking-widest opacity-50">Rounds unlocked up to</div>
-                    <div id="admin-unlocked-round" class="text-3xl font-black">Round 0</div>
+                    <div id="admin-unlocked-round" class="text-3xl font-black">Round 1</div>
                     <div class="text-[11px] opacity-60 mt-1">Players wait on the results screen until you unlock the next round.</div>
                 </div>
                 <div class="flex gap-2">
                     <button id="admin-advance-btn" onclick="adminUnlockNext()" class="px-5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-black uppercase text-xs shadow-lg">Unlock Next Round →</button>
-                    <button onclick="adminResetRounds()" class="px-4 py-3 rounded-xl font-black uppercase text-xs" style="background:var(--ops-btn); color:var(--ops-text); border:1px solid var(--border)">Reset to R1</button>
+                    <button id="admin-reset-btn" onclick="adminResetSlot()" class="px-4 py-3 rounded-xl font-black uppercase text-xs bg-red-600 hover:bg-red-500 text-white shadow-lg">Reset Slot ⟳</button>
                 </div>
             </div>
         </div>
@@ -279,7 +293,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
         // ADDED: setDoc/doc/onSnapshot/query/orderBy/serverTimestamp for the live, one-record-per-player leaderboard
-        import { getFirestore, collection, addDoc, setDoc, doc, onSnapshot, query, orderBy, serverTimestamp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+        import { getFirestore, collection, addDoc, setDoc, doc, onSnapshot, query, orderBy, serverTimestamp, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
         // ADDED: Firebase Auth (Google)
         import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
 
@@ -300,6 +314,12 @@
         let currentUserIsAdmin = false;    // ADDED: admin is a controller, not a player
         let controlUnsub = null;           // ADDED: listener on the shared round-control doc
         let unlockedRound = 1;             // ADDED: highest round players may advance into. 1 = trial & Round 1 are always open; admin gates R2+
+        let slot = "1";                    // ADDED: competition slot/room; data is fully isolated per slot
+        let lastResetToken = null;         // ADDED: detects an admin "reset slot" broadcast
+        // Slot-scoped Firestore paths — everything lives under slots/{slot}/...
+        const slotDoc = () => doc(db, "slots", slot);                       // control fields: unlockedRound, resetToken
+        const playersCol = () => collection(db, "slots", slot, "players");  // one score doc per player
+        const playerDoc = (uid) => doc(db, "slots", slot, "players", uid);
         try {
             const app = initializeApp(firebaseConfig);
             db = getFirestore(app);
@@ -379,8 +399,8 @@
 
         function startAdminFeed() {
             if (!db || adminUnsub) return;
-            // Listen to the whole collection and sort client-side (robust; no index needed, always live).
-            adminUnsub = onSnapshot(collection(db, "leaderboard3"), (snap) => {
+            // Listen to THIS slot's players and sort client-side (robust; no index needed, always live).
+            adminUnsub = onSnapshot(playersCol(), (snap) => {
                 const rows = [];
                 snap.forEach(d => rows.push(d.data()));
                 rows.sort((a, b) => (b.score || 0) - (a.score || 0));
@@ -406,18 +426,32 @@
                 </tr>`).join('');
         }
 
-        // Shared round control: admin unlocks rounds; players wait until permitted.
+        // Per-slot round control: admin unlocks rounds; players wait until permitted, and restart on reset.
         function startControlFeed(isAdmin) {
             if (!db) return;
-            const ref = doc(db, "control", "game");
-            controlUnsub = onSnapshot(ref, (snap) => {
+            controlUnsub = onSnapshot(slotDoc(), (snap) => {
                 if (isAdmin && !snap.exists()) {
-                    // First run: create the control doc without clobbering anything later.
-                    setDoc(ref, { unlockedRound: 1 }, { merge: true }).catch(() => {});
+                    // First run for this slot: create the control doc.
+                    setDoc(slotDoc(), { unlockedRound: 1, resetToken: 0 }, { merge: true }).catch(() => {});
                     return;
                 }
-                const data = snap.data();
-                unlockedRound = (data && typeof data.unlockedRound === 'number') ? data.unlockedRound : 1;
+                const data = snap.data() || {};
+                unlockedRound = (typeof data.unlockedRound === 'number') ? data.unlockedRound : 1;
+
+                // Reset broadcast: if the token changes after our first read, restart from Round 0.
+                const token = data.resetToken || 0;
+                if (!isAdmin) {
+                    if (lastResetToken === null) {
+                        lastResetToken = token; // baseline on first read — don't trigger
+                    } else if (token !== lastResetToken) {
+                        lastResetToken = token;
+                        showToast("ADMIN RESET — RESTARTING FROM ROUND 0");
+                        localStorage.removeItem('bistro_flow_save');
+                        setTimeout(() => location.reload(), 900);
+                        return;
+                    }
+                }
+
                 if (isAdmin) {
                     const el = document.getElementById('admin-unlocked-round');
                     if (el) el.innerText = `Round ${unlockedRound}`;
@@ -437,12 +471,36 @@
         window.adminUnlockNext = async () => {
             if (!db) return;
             const next = Math.min(4, unlockedRound + 1);
-            try { await setDoc(doc(db, "control", "game"), { unlockedRound: next }, { merge: true }); } catch (e) {}
+            try { await setDoc(slotDoc(), { unlockedRound: next }, { merge: true }); } catch (e) {}
         };
 
-        window.adminResetRounds = async () => {
+        // Reset the whole slot: wipe its leaderboard and send every player back to Round 0.
+        window.adminResetSlot = async () => {
             if (!db) return;
-            try { await setDoc(doc(db, "control", "game"), { unlockedRound: 1 }, { merge: true }); } catch (e) {}
+            if (!confirm(`Reset slot "${slot}"?\n\nThis clears this slot's leaderboard and sends every player in it back to Round 0 to play again. This cannot be undone.`)) return;
+            const btn = document.getElementById('admin-reset-btn');
+            if (btn) { btn.disabled = true; btn.style.opacity = "0.5"; btn.innerText = "Resetting…"; }
+            try {
+                // 1) delete every score doc in this slot
+                const snap = await getDocs(playersCol());
+                await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
+                // 2) relock to Round 1 and bump the reset token so players restart
+                await setDoc(slotDoc(), { unlockedRound: 1, resetToken: Date.now() }, { merge: true });
+            } catch (e) { console.warn("Reset error:", e); }
+            if (btn) { btn.disabled = false; btn.style.opacity = "1"; btn.innerText = "Reset Slot ⟳"; }
+        };
+
+        // Admin switches which slot they're viewing/controlling.
+        window.adminLoadSlot = () => {
+            const val = (document.getElementById('admin-slot').value || "1").trim() || "1";
+            slot = val;
+            const lbl = document.getElementById('admin-slot-label');
+            if (lbl) lbl.innerText = slot;
+            if (adminUnsub) { adminUnsub(); adminUnsub = null; }
+            if (controlUnsub) { controlUnsub(); controlUnsub = null; }
+            renderAdminTable([]); // clear board while the new slot loads
+            startAdminFeed();
+            startControlFeed(true);
         };
 
         // Enable/disable the player's "next round" button based on admin permission.
@@ -477,23 +535,30 @@
                         consoleEl.style.display = 'flex';
                         const cu = document.getElementById('admin-console-user');
                         if (cu) cu.innerText = user.displayName || user.email || "Admin";
-                        startAdminFeed();       // live leaderboard
-                        startControlFeed(true); // round unlock controls
+                        const si = document.getElementById('admin-slot');
+                        if (si) si.value = slot;
+                        const sl = document.getElementById('admin-slot-label');
+                        if (sl) sl.innerText = slot;
+                        startAdminFeed();       // live leaderboard for this slot
+                        startControlFeed(true); // round unlock + reset controls for this slot
                         return;
                     }
 
-                    // Player
+                    // Player — prefill operator id + slot from any saved values
                     const nameInput = document.getElementById('op-name');
                     if (nameInput && !nameInput.value) {
                         nameInput.value = (user.displayName || user.email || "AGENT").toUpperCase();
                     }
+                    const savedSlot = localStorage.getItem('bistro_slot');
+                    const slotInput = document.getElementById('op-slot');
+                    if (slotInput && !slotInput.value) slotInput.value = savedSlot || "1";
                     const chip = document.getElementById('user-chip');
                     if (chip) {
                         chip.classList.remove('hidden');
                         chip.classList.add('flex');
                         document.getElementById('user-chip-name').innerText = user.displayName || user.email || "Operator";
                     }
-                    startControlFeed(false); // listen for admin round unlocks
+                    // NOTE: the player's control feed starts at launch (initGame/checkAutoLoad), once the slot is known.
                     authReady();             // start / resume the game
                 } else {
                     document.getElementById('auth-gate').style.display = 'flex';
@@ -510,8 +575,12 @@
 
         window.initGame = () => {
             opName = document.getElementById('op-name').value.toUpperCase() || "AGENT";
+            const slotInput = document.getElementById('op-slot');
+            slot = (slotInput && slotInput.value.trim()) ? slotInput.value.trim() : "1";
+            localStorage.setItem('bistro_slot', slot);
             document.getElementById('start-screen').style.display = 'none';
             active = true;
+            if (db && !controlUnsub) startControlFeed(false); // now that the slot is known, listen for unlocks/reset
             spawnLogic();
             spawnContract();
             renderVendors();
@@ -724,7 +793,7 @@
         };
 
         function saveGame() {
-            const gameState = { score, time, stock, maxStock, currentRound, opName, TABLES, pendingOrders, guests, activeContracts, intakeActive, totalBailout };
+            const gameState = { score, time, stock, maxStock, currentRound, opName, TABLES, pendingOrders, guests, activeContracts, intakeActive, totalBailout, slot };
             localStorage.setItem('bistro_flow_save', JSON.stringify(gameState));
         }
 
@@ -739,6 +808,7 @@
                 activeContracts = data.activeContracts || [];
                 intakeActive = data.intakeActive !== undefined ? data.intakeActive : true;
                 totalBailout = data.totalBailout || 0;
+                slot = data.slot || localStorage.getItem('bistro_slot') || "1";
                 document.getElementById('op-name').value = opName;
                 return true;
             }
@@ -836,10 +906,11 @@
         async function pushLiveScore() {
             if (!db || !currentUser || currentUserIsAdmin || !active) return;
             try {
-                await setDoc(doc(db, "leaderboard3", currentUser.uid), {
+                await setDoc(playerDoc(currentUser.uid), {
                     uid: currentUser.uid,
                     op: opName,
                     email: currentUser.email || null,
+                    slot: slot,
                     score: Math.floor(score - totalBailout),
                     round: currentRound,
                     updatedAt: serverTimestamp()
@@ -979,18 +1050,19 @@
             // MODIFIED: one live-updating leaderboard record per signed-in player (keyed by uid)
             if (db && currentUser) {
                 try {
-                    await setDoc(doc(db, "leaderboard3", currentUser.uid), {
+                    await setDoc(playerDoc(currentUser.uid), {
                         uid: currentUser.uid,
                         op: opName,
                         email: currentUser.email || null,
+                        slot: slot,
                         score: adjustedScore,
                         round: currentRound,
                         updatedAt: serverTimestamp()
-                    });
+                    }, { merge: true });
                 } catch(e) {}
             } else if (db) {
-                // Offline / no-auth fallback keeps the original behaviour.
-                try { await addDoc(collection(db, "leaderboard3"), { op: opName, score: adjustedScore, round: currentRound }); } catch(e) {}
+                // Offline / no-auth fallback.
+                try { await addDoc(playersCol(), { op: opName, slot: slot, score: adjustedScore, round: currentRound }); } catch(e) {}
             }
             saveGame();
         }
@@ -999,6 +1071,7 @@
             if (loadGame() && opName) {
                 document.getElementById('start-screen').style.display = 'none';
                 active = true;
+                if (db && !currentUserIsAdmin && !controlUnsub) startControlFeed(false); // resume gate/reset listening on saved slot
                 spawnLogic();
                 spawnContract();
                 renderVendors();
