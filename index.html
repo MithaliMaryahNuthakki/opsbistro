@@ -94,11 +94,40 @@
             pointer-events: none;
             z-index: 1;
         }
+        /* ===== Animations & polish ===== */
+        @keyframes flash-up { 0% { transform: scale(1); } 35% { transform: scale(1.22); color: #10b981; } 100% { transform: scale(1); } }
+        @keyframes flash-down { 0% { transform: scale(1); } 35% { transform: scale(0.9); color: #ef4444; } 100% { transform: scale(1); } }
+        .flash-up { animation: flash-up 0.45s ease; }
+        .flash-down { animation: flash-down 0.45s ease; }
+
+        @keyframes float-up { 0% { transform: translate(-50%,0); opacity: 0; } 15% { opacity: 1; } 100% { transform: translate(-50%,-90px); opacity: 0; } }
+        .money-float { position: fixed; z-index: 9998; font-weight: 900; font-size: 20px; color: #10b981; pointer-events: none; animation: float-up 1.15s ease-out forwards; text-shadow: 0 2px 10px rgba(0,0,0,0.35); }
+        .money-float.neg { color: #ef4444; }
+
+        #round-banner { position: fixed; inset: 0; z-index: 8500; display: none; align-items: center; justify-content: center; pointer-events: none; }
+        #round-banner.show { display: flex; animation: banner-fade 2.3s ease forwards; }
+        @keyframes banner-fade { 0% { opacity: 0; } 12% { opacity: 1; } 82% { opacity: 1; } 100% { opacity: 0; } }
+        .round-banner-inner { text-align: center; padding: 2rem 3.5rem; border-radius: 2rem; background: var(--card); border: 1px solid var(--border); box-shadow: 0 25px 60px rgba(0,0,0,0.35); transform: scale(0.7); animation: banner-pop 2.3s cubic-bezier(.2,1.4,.3,1) forwards; }
+        @keyframes banner-pop { 0% { transform: scale(0.7); } 18% { transform: scale(1.06); } 30% { transform: scale(1); } 82% { transform: scale(1); } 100% { transform: scale(1.12); } }
+
+        button { transition: transform 0.08s ease, filter 0.2s ease; }
+        button:hover:not(:disabled) { filter: brightness(1.08); }
+        button:active:not(:disabled) { transform: scale(0.96); }
+
+        #final-screen { animation: fade-in 0.5s ease; }
+        @keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+        .final-trophy { display: inline-block; animation: trophy-bounce 1.3s ease-in-out infinite; }
+        @keyframes trophy-bounce { 0%,100% { transform: translateY(0) rotate(-4deg); } 50% { transform: translateY(-14px) rotate(4deg); } }
+        .final-podium-row { display: flex; align-items: center; padding: 12px 16px; border-radius: 14px; background: rgba(148,163,184,0.14); margin-bottom: 10px; opacity: 0; animation: slide-in 0.55s ease forwards; }
+        @keyframes slide-in { from { opacity: 0; transform: translateX(-18px); } to { opacity: 1; transform: translateX(0); } }
     </style>
 </head>
-<body class="dark-mode">
+<body>
 
     <div id="notification-toast">ACTION BLOCKED</div>
+
+    <!-- Round start banner -->
+    <div id="round-banner"><div class="round-banner-inner"><div id="round-banner-text"></div></div></div>
 
     <!-- ===== ADDED: signed-in user chip (revealed after Google sign-in) ===== -->
     <div id="user-chip" class="fixed bottom-4 left-4 z-[9500] hidden items-center gap-2 bg-slate-900/90 border border-white/10 rounded-full px-3 py-1.5 backdrop-blur">
@@ -221,8 +250,25 @@
     <div id="audit-screen" class="fixed inset-0 bg-black/95 z-[10000] hidden items-center justify-center p-4 text-white">
         <div class="bg-slate-900 p-10 rounded-[3rem] w-full max-w-md border border-white/5 shadow-2xl">
             <h2 id="audit-title" class="text-3xl font-black italic mb-2 text-indigo-400">SHIFT LOGS</h2>
-            <div id="audit-details" class="space-y-4 mb-10 text-sm font-mono bg-black/20 p-6 rounded-2xl"></div>
+            <div id="audit-details" class="space-y-4 mb-4 text-sm font-mono bg-black/20 p-6 rounded-2xl"></div>
+            <div id="audit-next-preview" class="mb-6 p-4 rounded-2xl bg-indigo-500/10 border border-indigo-500/30" style="display:none"></div>
             <button onclick="startNextRound()" id="accept-results-btn" class="w-full py-5 bg-emerald-600 text-white font-black rounded-2xl uppercase shadow-xl">Accept Results</button>
+        </div>
+    </div>
+
+    <!-- ===== Player final results / podium (shown when admin ends the game) ===== -->
+    <div id="final-screen" class="fixed inset-0 bg-black/95 z-[11500] hidden items-center justify-center p-4 text-white">
+        <div class="bg-slate-900 p-10 rounded-[3rem] w-full max-w-md border border-white/5 shadow-2xl text-center">
+            <div class="final-trophy text-6xl mb-2">🏆</div>
+            <h2 class="text-2xl font-black italic uppercase text-amber-400 mb-6">Final Results</h2>
+            <div class="mb-6">
+                <div class="text-[10px] font-black uppercase tracking-widest opacity-50">Your Rank</div>
+                <div id="final-rank" class="text-5xl font-black">—</div>
+                <div id="final-score" class="text-xl font-mono font-black text-emerald-400 mt-1">$0</div>
+            </div>
+            <div class="text-[10px] font-black uppercase tracking-widest opacity-50 mb-3">Podium</div>
+            <div id="final-podium" class="mb-6"></div>
+            <button onclick="signOutUser()" class="w-full py-4 bg-indigo-600 text-white font-black rounded-2xl uppercase shadow-xl">Sign Out</button>
         </div>
     </div>
 
@@ -257,11 +303,12 @@
             <div class="flex items-center justify-between flex-wrap gap-4">
                 <div>
                     <div class="text-[10px] font-black uppercase tracking-widest opacity-50">Rounds unlocked up to</div>
-                    <div id="admin-unlocked-round" class="text-3xl font-black">Round 1</div>
-                    <div class="text-[11px] opacity-60 mt-1">Players wait on the results screen until you unlock the next round.</div>
+                    <div id="admin-unlocked-round" class="text-3xl font-black">Round 0</div>
+                    <div class="text-[11px] opacity-60 mt-1">Unlock Round 1 to start the competition. Players auto-start each round together the moment you unlock it.</div>
                 </div>
-                <div class="flex gap-2">
+                <div class="flex gap-2 flex-wrap">
                     <button id="admin-advance-btn" onclick="adminUnlockNext()" class="px-5 py-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl font-black uppercase text-xs shadow-lg">Unlock Next Round →</button>
+                    <button id="admin-end-btn" onclick="adminEndGame()" class="px-4 py-3 rounded-xl font-black uppercase text-xs bg-amber-500 hover:bg-amber-400 text-black shadow-lg">End Game 🏁</button>
                     <button id="admin-reset-btn" onclick="adminResetSlot()" class="px-4 py-3 rounded-xl font-black uppercase text-xs bg-red-600 hover:bg-red-500 text-white shadow-lg">Reset Slot ⟳</button>
                 </div>
             </div>
@@ -317,6 +364,7 @@
         let slot = "1";                    // ADDED: competition slot/room; data is fully isolated per slot
         let lastResetToken = null;         // ADDED: detects an admin "reset slot" broadcast
         let feedSlot = null;               // ADDED: which slot the player's control feed is currently on
+        let gameEnded = false;             // ADDED: admin ended the game -> freeze + show podium
         // Slot-scoped Firestore paths — everything lives under slots/{slot}/...
         const slotDoc = () => doc(db, "slots", slot);                       // control fields: unlockedRound, resetToken
         const playersCol = () => collection(db, "slots", slot, "players");  // one score doc per player
@@ -343,11 +391,13 @@
         const bailoutFloor = (round) => (round + 1) * 3000;
 
         const ROUND_CONFIG = {
-            0: { time: 120, label: "Round 0: Trial" },
-            1: { time: 240, label: "Round 1" },
-            2: { time: 300, label: "Round 2" },
-            3: { time: 360, label: "Round 3" },
-            4: { time: 180, label: "Round 4: Rapid Fire" }
+            // time: round length (s) | spawnMs: guest arrival gap | vip: VIP probability
+            // decay: non-VIP patience drain/s (VIPs drain +1.0) | valueMult: guest $ scaler | walkout: walk-out fine
+            0: { time: 120, label: "Round 0: Trial",           spawnMs: 12000, vip: 0.10, decay: 1.0, valueMult: 1.0, walkout: 400 },
+            1: { time: 210, label: "Round 1: Steady Service",  spawnMs: 12000, vip: 0.12, decay: 1.2, valueMult: 1.0, walkout: 600 },
+            2: { time: 270, label: "Round 2: Lunch Rush",      spawnMs: 11000, vip: 0.15, decay: 1.4, valueMult: 1.2, walkout: 900 },
+            3: { time: 300, label: "Round 3: VIP Night",       spawnMs: 10000, vip: 0.30, decay: 1.6, valueMult: 1.5, walkout: 1200 },
+            4: { time: 240, label: "Round 4: Grand Finale",    spawnMs: 9000,  vip: 0.25, decay: 1.8, valueMult: 2.0, walkout: 1500 }
         };
 
         let vendorData = [
@@ -427,45 +477,64 @@
                 </tr>`).join('');
         }
 
-        // Per-slot round control: admin unlocks rounds; players wait until permitted, and restart on reset.
+        // Per-slot round control: admin unlocks rounds; players auto-start together, restart on reset, end on finish.
         function startControlFeed(isAdmin) {
             if (!db) return;
             controlUnsub = onSnapshot(slotDoc(), (snap) => {
                 if (isAdmin && !snap.exists()) {
-                    // First run for this slot: create the control doc.
-                    setDoc(slotDoc(), { unlockedRound: 1, resetToken: 0 }, { merge: true }).catch(() => {});
+                    // First run for this slot: create the control doc (Round 1 locked until admin starts).
+                    setDoc(slotDoc(), { unlockedRound: 0, resetToken: 0, ended: false }, { merge: true }).catch(() => {});
                     return;
                 }
                 const data = snap.data() || {};
-                unlockedRound = (typeof data.unlockedRound === 'number') ? data.unlockedRound : 1;
+                unlockedRound = (typeof data.unlockedRound === 'number') ? data.unlockedRound : 0;
 
-                // Reset broadcast: if the token changes after our first read, restart from Round 0.
-                const token = data.resetToken || 0;
                 if (!isAdmin) {
+                    // Reset broadcast
+                    const token = data.resetToken || 0;
                     if (lastResetToken === null) {
-                        lastResetToken = token; // baseline on first read — don't trigger
+                        lastResetToken = token; // baseline on first read
                     } else if (token !== lastResetToken) {
                         lastResetToken = token;
-                        active = false;          // stop the loop NOW so no live-write recreates our row
+                        active = false;
                         showToast("ADMIN RESET — RESTARTING FROM ROUND 0");
                         localStorage.removeItem('bistro_flow_save');
                         setTimeout(() => location.reload(), 900);
                         return;
                     }
+                    // End-game broadcast -> freeze and show the podium
+                    if (data.ended && !gameEnded) {
+                        gameEnded = true;
+                        active = false;
+                        showFinalResults();
+                        return;
+                    }
+                    if (gameEnded) return;
+                    // Synchronized start: parked on the results screen + our next round just unlocked -> GO together.
+                    const auditVisible = document.getElementById('audit-screen').style.display === 'flex';
+                    const target = currentRound + 1;
+                    if (auditVisible && !active && target <= 4 && unlockedRound >= target) {
+                        startNextRound(); // clock starts now, in sync with everyone waiting
+                    } else {
+                        updateAdvanceGate();
+                    }
                 }
 
                 if (isAdmin) {
                     const el = document.getElementById('admin-unlocked-round');
-                    if (el) el.innerText = `Round ${unlockedRound}`;
+                    if (el) el.innerText = data.ended ? "ENDED" : `Round ${unlockedRound}`;
                     const adv = document.getElementById('admin-advance-btn');
                     if (adv) {
                         const next = unlockedRound + 1;
                         adv.innerText = next > 4 ? "All Rounds Unlocked" : `Unlock Round ${next} →`;
-                        adv.disabled = next > 4;
-                        adv.style.opacity = next > 4 ? "0.5" : "1";
+                        const off = next > 4 || !!data.ended;
+                        adv.disabled = off; adv.style.opacity = off ? "0.5" : "1";
                     }
-                } else {
-                    updateAdvanceGate();
+                    const endBtn = document.getElementById('admin-end-btn');
+                    if (endBtn) {
+                        endBtn.innerText = data.ended ? "Game Ended ✓" : "End Game 🏁";
+                        endBtn.disabled = !!data.ended; endBtn.style.opacity = data.ended ? "0.5" : "1";
+                    }
                 }
             }, (e) => console.warn("Control feed error:", e));
         }
@@ -474,6 +543,13 @@
             if (!db) return;
             const next = Math.min(4, unlockedRound + 1);
             try { await setDoc(slotDoc(), { unlockedRound: next }, { merge: true }); } catch (e) {}
+        };
+
+        // End the game: freeze the board and push every player to their final podium.
+        window.adminEndGame = async () => {
+            if (!db) return;
+            if (!confirm(`End the game for slot "${slot}"?\n\nThis freezes the leaderboard and shows every player their final ranking. Use Reset Slot afterward to play again.`)) return;
+            try { await setDoc(slotDoc(), { ended: true }, { merge: true }); } catch (e) {}
         };
 
         // Ensure the player is subscribed to the control feed for their CURRENT slot (re-subscribes on slot change).
@@ -497,7 +573,7 @@
                 const snap = await getDocs(playersCol());
                 await Promise.all(snap.docs.map(d => deleteDoc(d.ref)));
                 // 2) relock to Round 1 and bump the reset token so players restart
-                await setDoc(slotDoc(), { unlockedRound: 1, resetToken: Date.now() }, { merge: true });
+                await setDoc(slotDoc(), { unlockedRound: 0, resetToken: Date.now(), ended: false }, { merge: true });
             } catch (e) { console.warn("Reset error:", e); }
             if (btn) { btn.disabled = false; btn.style.opacity = "1"; btn.innerText = "Reset Slot ⟳"; }
         };
@@ -520,8 +596,8 @@
             const btn = document.getElementById('accept-results-btn');
             if (!btn) return;
             const target = currentRound + 1;
-            // Offline, trial/Round 1, or final accept -> self-serve, no gating.
-            if (!db || target < 2 || target > 4) { btn.disabled = false; btn.style.opacity = "1"; btn.innerText = "Accept Results"; return; }
+            // Offline or final accept -> self-serve, no gating.
+            if (!db || target > 4) { btn.disabled = false; btn.style.opacity = "1"; btn.innerText = "Accept Results"; return; }
             if (unlockedRound >= target) {
                 btn.disabled = false; btn.style.opacity = "1";
                 btn.innerText = `Proceed to Round ${target}`;
@@ -529,6 +605,70 @@
                 btn.disabled = true; btn.style.opacity = "0.5";
                 btn.innerText = "Waiting for admin…";
             }
+        }
+
+        // Round-start banner
+        function showRoundBanner(round) {
+            const cfg = ROUND_CONFIG[round]; if (!cfg) return;
+            const el = document.getElementById('round-banner');
+            const txt = document.getElementById('round-banner-text');
+            if (!el || !txt) return;
+            txt.innerHTML = `<div class="text-[11px] font-black uppercase tracking-[0.3em] opacity-50">Now entering</div>
+                <div class="text-4xl font-black italic uppercase tracking-tighter my-2">${cfg.label}</div>
+                <div class="text-[12px] font-black uppercase opacity-60">${Math.floor(cfg.time/60)}:${String(cfg.time%60).padStart(2,'0')} · ${Math.round(cfg.vip*100)}% VIP · ${cfg.valueMult}× value</div>`;
+            el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+            setTimeout(() => el.classList.remove('show'), 2400);
+        }
+
+        // Next-round preview on the shift-log screen (plan before the clock starts)
+        function renderNextPreview() {
+            const box = document.getElementById('audit-next-preview'); if (!box) return;
+            const next = ROUND_CONFIG[currentRound + 1];
+            if (!next) { box.style.display = 'none'; return; }
+            box.style.display = 'block';
+            box.innerHTML = `<div class="text-[9px] font-black uppercase tracking-widest text-indigo-400 mb-1">Coming up</div>
+                <div class="text-lg font-black uppercase">${next.label}</div>
+                <div class="grid grid-cols-3 gap-2 mt-3 text-center">
+                    <div><div class="text-[8px] uppercase font-black opacity-50">Length</div><div class="text-sm font-black">${Math.floor(next.time/60)}:${String(next.time%60).padStart(2,'0')}</div></div>
+                    <div><div class="text-[8px] uppercase font-black opacity-50">VIP Rate</div><div class="text-sm font-black text-purple-400">${Math.round(next.vip*100)}%</div></div>
+                    <div><div class="text-[8px] uppercase font-black opacity-50">Value</div><div class="text-sm font-black text-emerald-400">${next.valueMult}×</div></div>
+                </div>
+                <div class="text-[10px] opacity-60 mt-3">Walk-out fine rises to $${next.walkout.toLocaleString()}. Stock up before the clock starts.</div>`;
+        }
+
+        // Floating +$ / -$ feedback
+        function floatMoney(amount, x, y) {
+            const el = document.createElement('div');
+            el.className = 'money-float' + (amount < 0 ? ' neg' : '');
+            el.innerText = `${amount < 0 ? '-' : '+'}$${Math.abs(Math.floor(amount)).toLocaleString()}`;
+            el.style.left = (x || window.innerWidth / 2) + 'px';
+            el.style.top = (y || 120) + 'px';
+            document.body.appendChild(el);
+            setTimeout(() => el.remove(), 1200);
+        }
+
+        // Final podium for players when the admin ends the game
+        async function showFinalResults() {
+            document.getElementById('audit-screen').style.display = 'none';
+            const screen = document.getElementById('final-screen');
+            screen.classList.remove('hidden'); screen.style.display = 'flex';
+            let rows = [];
+            try {
+                const snap = await getDocs(playersCol());
+                snap.forEach(d => rows.push(d.data()));
+            } catch (e) {}
+            rows.sort((a, b) => (b.score || 0) - (a.score || 0));
+            const myIdx = rows.findIndex(r => currentUser && r.uid === currentUser.uid);
+            const me = myIdx >= 0 ? rows[myIdx] : null;
+            document.getElementById('final-rank').innerText = myIdx >= 0 ? `#${myIdx + 1}` : "—";
+            document.getElementById('final-score').innerText = `$${Math.floor(me ? (me.score || 0) : (score - totalBailout)).toLocaleString()}`;
+            const medals = ['🥇', '🥈', '🥉'];
+            document.getElementById('final-podium').innerHTML = rows.slice(0, 3).map((r, i) => `
+                <div class="final-podium-row" style="animation-delay:${i * 0.13}s">
+                    <span class="text-2xl mr-3">${medals[i]}</span>
+                    <span class="flex-1 text-left font-black uppercase text-sm">${r.op || '—'}</span>
+                    <span class="font-mono font-black text-emerald-400">$${Math.floor(r.score || 0).toLocaleString()}</span>
+                </div>`).join('') || `<div class="opacity-40 text-xs uppercase font-black">No scores recorded</div>`;
         }
 
         if (auth) {
@@ -614,7 +754,7 @@
         window.toggleTheme = () => {
             const goingDark = !document.body.classList.contains('dark-mode');
             document.body.classList.toggle('dark-mode', goingDark);
-            const icon = goingDark ? "🌙" : "☀️";
+            const icon = goingDark ? "☀️" : "🌙";
             ['theme-toggle', 'admin-theme-toggle'].forEach(id => {
                 const b = document.getElementById(id);
                 if (b) b.innerText = icon;
@@ -643,9 +783,8 @@
             activeContracts.push(newContract);
             render();
             
-            // MODIFIED: In Round 4, contracts are minimised to once every 5 minutes (300s)
-            let contractDelay = 50000 + (currentRound * 30000);
-            if (currentRound === 4) contractDelay = 60000; 
+            // Contracts stay active every round — the finale should reward stock allocation, not just speed.
+            const contractDelay = 50000 + (currentRound * 30000);
 
             setTimeout(spawnContract, contractDelay); 
         };
@@ -727,7 +866,7 @@
             // The trial (R0->R1) and entering Round 1 are always free.
             if (db && !currentUserIsAdmin) {
                 const target = currentRound + 1;
-                if (target >= 2 && target <= 4 && unlockedRound < target) {
+                if (target >= 1 && target <= 4 && unlockedRound < target) {
                     showToast("WAITING FOR ADMIN TO UNLOCK NEXT ROUND");
                     return;
                 }
@@ -766,6 +905,7 @@
             stats = { revenue:0, penalty:0, fines:0 };
             activeContracts = [];
             document.getElementById('audit-screen').style.display = 'none';
+            showRoundBanner(currentRound);
             active = true;
             intakeActive = true;
             const btn = document.getElementById('queue-toggle-btn');
@@ -830,22 +970,22 @@
 
         function spawnLogic() {
             if(!active) return;
+            const cfg = ROUND_CONFIG[currentRound] || ROUND_CONFIG[1];
             if(intakeActive) {
-                const isVIP = Math.random() > 0.85;
+                const isVIP = Math.random() < cfg.vip;
                 const partySize = [2, 4, 6][Math.floor(Math.random() * 3)];
                 const appetite = 1 + (Math.random() * 0.4);
                 guests.push({
                     id: Date.now() + Math.random(),
                     pref: Object.keys(SECTIONS)[Math.floor(Math.random() * 4)],
                     size: partySize, appetite: appetite,
-                    val: Math.floor(partySize * appetite * 180 * (isVIP ? 2.5 : 1)), 
+                    val: Math.floor(partySize * appetite * 180 * cfg.valueMult * (isVIP ? 2.5 : 1)),
                     isVIP: isVIP, patience: 100,
-                    decay: (currentRound === 4 ? 3.5 : (isVIP ? 2.8 : 1.2 + (currentRound * 0.2)))
+                    decay: isVIP ? (cfg.decay + 1.0) : cfg.decay // VIPs are higher value but leave sooner
                 });
                 render();
             }
-            const nextSpawn = currentRound === 4 ? 8000 : Math.max(8000, 15000 - (currentRound * 1500));
-            setTimeout(spawnLogic, nextSpawn);
+            setTimeout(spawnLogic, cfg.spawnMs);
         }
 
         function tick() {
@@ -892,6 +1032,7 @@
                     p.rem -= (isSurge ? 4 : 1);
                     if(p.rem <= 0) {
                         score += p.pay; stats.revenue += p.pay;
+                        floatMoney(p.pay);
                         t.parties.splice(i, 1);
                         if(t.parties.length === 0) { t.busing = 25; t.busTotal = 25; }
                     }
@@ -900,8 +1041,9 @@
             guests.forEach((g, i) => {
                 g.patience -= g.decay;
                 if(g.patience <= 0) { 
-                    const penalty = currentRound > 1 ? 1000 : 500;
+                    const penalty = (ROUND_CONFIG[currentRound] && ROUND_CONFIG[currentRound].walkout) || 500;
                     guests.splice(i, 1); score -= penalty; stats.fines += penalty; 
+                    floatMoney(-penalty, 200);
                     showToast(`WALK OUT LOSS (-$${penalty})`); 
                 }
             });
@@ -946,8 +1088,17 @@
             }).join('');
         }
 
+        let _prevScore = null; // for the capital flash animation
         function render() {
-            document.getElementById('score-text').innerText = `$${Math.floor(score).toLocaleString()}`;
+            const scoreEl = document.getElementById('score-text');
+            scoreEl.innerText = `$${Math.floor(score).toLocaleString()}`;
+            if (_prevScore !== null && Math.floor(score) !== _prevScore) {
+                const up = Math.floor(score) > _prevScore;
+                scoreEl.classList.remove('flash-up', 'flash-down');
+                void scoreEl.offsetWidth;
+                scoreEl.classList.add(up ? 'flash-up' : 'flash-down');
+            }
+            _prevScore = Math.floor(score);
             document.getElementById('stock-text').innerText = stock;
             document.getElementById('max-stock-text').innerText = `/${maxStock}`;
             document.getElementById('round-display-text').innerText = ROUND_CONFIG[currentRound]?.label || `Round ${currentRound}`;
@@ -1060,6 +1211,7 @@
             summary += `<div class="flex justify-between font-black text-lg text-indigo-400"><span>LEADERBOARD SCORE</span><span>$${adjustedScore.toLocaleString()}</span></div>`;
             if(currentRound === 0) summary += `<div class="mt-4 p-3 bg-indigo-500/20 text-indigo-400 text-xs rounded-lg uppercase font-black">Trial Complete. Data will reset for Round 1.</div>`;
             document.getElementById('audit-details').innerHTML = summary;
+            renderNextPreview();
             // MODIFIED: one live-updating leaderboard record per signed-in player (keyed by uid)
             if (db && currentUser) {
                 try {
